@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>WebSocket Audio Recorder</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+
+            .container {
+                background: #f5f5f5;
+                padding: 20px;
+                border-radius: 10px;
+                margin: 20px 0;
+            }
+
+            .control-group {
+                margin: 15px 0;
+            }
+
+            label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: bold;
+            }
+
+            select,
+            button {
+                padding: 10px 15px;
+                font-size: 16px;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+            }
+
+            select {
+                width: 100%;
+                max-width: 400px;
+            }
+
+            button {
+                background: #007bff;
+                color: white;
+                border: 2px solid #007bff;
+                cursor: pointer;
+                margin: 5px;
+            }
+
+            button:hover {
+                background: #0056b3;
+                border-color: #0056b3;
+            }
+
+            button:disabled {
+                background: #6c757d;
+                border-color: #6c757d;
+                cursor: not-allowed;
+            }
+
+            .recording {
+                background: #dc3545 !important;
+                border-color: #dc3545 !important;
+            }
+
+            .recording:hover {
+                background: #c82333 !important;
+                border-color: #c82333 !important;
+            }
+
+            #status {
+                padding: 10px;
+                margin: 10px 0;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+
+            .status-connected {
+                background: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+            }
+
+            .status-recording {
+                background: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            }
+
+            .status-error {
+                background: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>WebSocket Audio Recorder</h1>
+
+        <div class="container">
+            <div class="control-group">
+                <label for="deviceSelect">Select Audio Device:</label>
+                <select id="deviceSelect">
+                    <option value="">Loading devices...</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <button id="recordButton" disabled>Start Recording</button>
+                <button id="testButton" disabled>Test Microphone</button>
+            </div>
+
+            <div id="status">Connecting to server...</div>
+            <!--<audio controls>
+                <source
+                    src="data:audio/webm;base64,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"
+                    type="audio/webm"
+                />
+            </audio>-->
+        </div>
+
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>
