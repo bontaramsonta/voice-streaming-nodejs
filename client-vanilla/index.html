@@ -264,7 +264,7 @@
 
         setupWebSocket() {
           this.websocket = new WebSocket("ws://localhost:4000");
-          this.websocket.binaryType = "arraybuffer";
+          this.websocket.binaryType = "text"; // Changed from arraybuffer to text
 
           this.websocket.onopen = () => {
             this.updateStatus("Connected to server", "connected");
@@ -309,12 +309,11 @@
         }
 
         sendControlMessage(command) {
-          const buffer = new ArrayBuffer(1);
-          const view = new Uint8Array(buffer);
-
-          view[0] = command;
-
-          this.websocket.send(buffer);
+          const message = {
+            t: 1, // Control message type
+            v: command,
+          };
+          this.websocket.send(JSON.stringify(message));
         }
 
         async startRecording() {
@@ -353,16 +352,24 @@
                 // If VAD is available, only send audio when user is speaking
                 if (this.vad) {
                   if (this.isSpeaking) {
-                    // Send PCM data to WebSocket only when speaking
+                    // Send PCM data to WebSocket as JSON message when speaking
                     if (this.websocket.readyState === WebSocket.OPEN) {
-                      this.websocket.send(event.data.data);
+                      const audioMessage = {
+                        t: 2, // Audio message type
+                        v: JSON.stringify(Array.from(event.data.data)),
+                      };
+                      this.websocket.send(JSON.stringify(audioMessage));
                     }
                   }
                   // VAD handles its own audio processing internally
                 } else {
                   // If no VAD, send all audio data (fallback behavior)
                   if (this.websocket.readyState === WebSocket.OPEN) {
-                    this.websocket.send(event.data.data);
+                    const audioMessage = {
+                      t: 2, // Audio message type
+                      v: JSON.stringify(Array.from(event.data.data)),
+                    };
+                    this.websocket.send(JSON.stringify(audioMessage));
                   }
                 }
               }
