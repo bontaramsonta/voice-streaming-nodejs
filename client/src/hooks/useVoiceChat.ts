@@ -13,6 +13,7 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     sendControlMessage,
     sendAudioData,
     isConnected,
+    audioPlayback,
   } = useWebSocket();
   const { requestPermissions, getMediaStream } = useAudioDevices();
 
@@ -78,7 +79,7 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     try {
       audioContextRef.current = new (window.AudioContext ||
         (window as any).webkitAudioContext)({
-        sampleRate: 48000,
+        sampleRate: 16000,
       });
 
       // Load the AudioWorklet processor
@@ -106,6 +107,9 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
             setSpeaking(true);
             sendControlMessage(CONTROL_MESSAGES.USER_SPEAKING);
             console.info("Recording - User speaking...");
+            // Pause AI audio when user starts speaking
+            // audioPlayback.pauseAudio();
+            console.log("🎵 Paused AI audio - user speaking");
           }
         },
         onSpeechEnd: () => {
@@ -114,6 +118,9 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
             setSpeaking(false);
             sendControlMessage(CONTROL_MESSAGES.USER_PAUSED);
             console.info("Recording - User paused...");
+            // Resume AI audio when user stops speaking (if there was any paused)
+            // audioPlayback.resumeAudio();
+            console.log("🎵 Resumed AI audio - user paused");
           }
         },
         onVADMisfire: () => {
@@ -130,7 +137,7 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
       vadRef.current = null;
       return false;
     }
-  }, [setSpeaking, sendControlMessage]);
+  }, [setSpeaking, sendControlMessage, audioPlayback]);
 
   const startChat = useCallback(async () => {
     try {
@@ -279,5 +286,6 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     startChat,
     endChat,
     isConnected,
+    audioPlayback,
   };
 }

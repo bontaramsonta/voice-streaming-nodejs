@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createServer } from "node:http";
 import app from "./router/index.js";
 import { initializeWebSocket } from "./websocket/index.js";

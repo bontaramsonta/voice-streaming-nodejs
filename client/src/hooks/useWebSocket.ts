@@ -1,11 +1,18 @@
 import { useRef, useCallback, useMemo } from "react";
 import { useChatContext } from "@/contexts/ChatContext";
-import { CONTROL_MESSAGES, WebSocketMessage } from "@/types/chat";
+import {
+  CONTROL_MESSAGES,
+  WebSocketMessage,
+  WS_MESSAGE_TYPES,
+  SERVER_CONTROL_MESSAGES,
+} from "@/types/chat";
+import { useAudioPlayback } from "./useAudioPlayback";
 
 export function useWebSocket() {
   const websocketRef = useRef<WebSocket | null>(null);
   const intentionalDisconnectRef = useRef(false);
   const { setConnected, setStatus } = useChatContext();
+  const audioPlayback = useAudioPlayback();
 
   const connect = useCallback(
     (url: string) => {
@@ -25,12 +32,22 @@ export function useWebSocket() {
       websocketRef.current.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
-          if (message.event === "recording-started") {
-            setStatus("Recording in progress...", "recording");
-          } else if (message.event === "recording-saved") {
-            setStatus(`Recording saved as ${message.filename}`, "connected");
-          } else if (message.event === "error") {
-            setStatus("Server error: " + message.message, "error");
+
+          // Handle new message format
+          if (typeof message.t === "number") {
+            switch (message.t) {
+              case WS_MESSAGE_TYPES.CONTROL:
+                handleServerControlMessage(message.v);
+                break;
+              case WS_MESSAGE_TYPES.AUDIO_RESPONSE:
+                handleAudioResponse(message.v);
+                break;
+              case WS_MESSAGE_TYPES.TEXT:
+                console.log("Text message received:", message.v);
+                break;
+              default:
+                console.log("Unknown message type:", message.t);
+            }
           }
         } catch (error) {
           console.error("Error parsing WebSocket message:", error);
@@ -50,7 +67,50 @@ export function useWebSocket() {
         console.error("WebSocket error:", error);
       };
     },
-    [setConnected, setStatus]
+    [setConnected, setStatus, audioPlayback]
+  );
+
+  const handleServerControlMessage = useCallback(
+    (controlValue: number) => {
+      switch (controlValue) {
+        case SERVER_CONTROL_MESSAGES.SERVER_PROCESSING:
+          setStatus("AI is processing...", "recording");
+          console.log("🤖 Server processing started");
+          break;
+        case SERVER_CONTROL_MESSAGES.SERVER_READY:
+          setStatus("Ready for input", "connected");
+          console.log("🤖 Server ready - resetting audio stream");
+          audioPlayback.resetAudioStream();
+          break;
+        case SERVER_CONTROL_MESSAGES.SERVER_INTERRUPTED:
+          setStatus("Processing interrupted", "connected");
+          console.log("🤖 Server processing interrupted");
+          audioPlayback.resetAudioStream();
+          break;
+        case SERVER_CONTROL_MESSAGES.SERVER_DONE:
+          setStatus("Processing complete", "connected");
+          console.log("🤖 Server processing done");
+          audioPlayback.playCompleteAudio();
+          break;
+        default:
+          console.log("Unknown server control message:", controlValue);
+      }
+    },
+    [setStatus, audioPlayback]
+  );
+
+  const handleAudioResponse = useCallback(
+    (audioData: string) => {
+      try {
+        // Convert JSON string back to Uint8Array
+        const audioArray = JSON.parse(audioData);
+        const audioChunk = new Uint8Array(audioArray);
+        audioPlayback.addAudioChunk(audioChunk);
+      } catch (error) {
+        console.error("Error processing audio response:", error);
+      }
+    },
+    [audioPlayback]
   );
 
   const disconnect = useCallback(() => {
@@ -92,5 +152,6 @@ export function useWebSocket() {
     sendControlMessage,
     sendAudioData,
     isConnected,
+    audioPlayback,
   };
 }

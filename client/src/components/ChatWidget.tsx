@@ -4,12 +4,13 @@ import {
   PhoneOff,
   MessageCircle,
   MessageCircleOff,
+  Volume2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { cn } from "@/lib/utils";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import TextChatPanel from "./TextChatPanel";
 
 interface ChatWidgetProps {
@@ -19,8 +20,19 @@ interface ChatWidgetProps {
 
 export default function ChatWidget({ wsUrl, conversationId }: ChatWidgetProps) {
   const { state } = useChatContext();
-  const { startChat, endChat } = useVoiceChat(wsUrl, conversationId);
+  const { startChat, endChat, audioPlayback } = useVoiceChat(
+    wsUrl,
+    conversationId
+  );
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Initialize audio element with the useAudioPlayback hook
+  useEffect(() => {
+    if (audioRef.current && audioPlayback) {
+      audioPlayback.setAudioElement(audioRef.current);
+    }
+  }, [audioPlayback]);
 
   const handleMicClick = useCallback(async () => {
     if (state.isRecording) {
@@ -40,6 +52,14 @@ export default function ChatWidget({ wsUrl, conversationId }: ChatWidgetProps) {
 
   return (
     <div className="relative">
+      {/* Hidden audio element for PCM playback */}
+      <audio
+        ref={audioRef}
+        autoPlay
+        preload="auto"
+        style={{ display: "none" }}
+      />
+
       <div
         className={
           "bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-3xs w-sm"
@@ -102,7 +122,9 @@ export default function ChatWidget({ wsUrl, conversationId }: ChatWidgetProps) {
                             : "bg-gray-400"
                         )}
                       />
-                      {state.isSpeaking ? "Speaking..." : "Listening..."}
+                      {state.isSpeaking
+                        ? "Speaking..."
+                        : state.status || "Listening..."}
                     </div>
                   </div>
                 ) : (

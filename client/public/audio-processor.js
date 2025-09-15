@@ -1,7 +1,7 @@
 class AudioProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.sampleRate = 48000; // Default sample rate
+        this.sampleRate = 16000; // Default sample rate
         this.bitDepth = 24;
         this.bufferSize = 1024; // Process in chunks
 
