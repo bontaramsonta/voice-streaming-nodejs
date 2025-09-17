@@ -5,24 +5,24 @@ import OpenAI from "openai";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 
 const WS_MESSAGE_TYPES = {
-  CONTROL: 1,
-  AUDIO: 2,
-  TEXT: 3,
-  AUDIO_RESPONSE: 4, // For sending AI audio responses back to client
+  CONTROL: "control",
+  AUDIO: "audio",
+  TEXT: "text",
 };
 
 const WS_CONTROL_MESSAGES = {
-  RECORD_START: 1,
-  RECORD_END: 2,
-  USER_SPEAKING: 3,
-  USER_PAUSED: 4,
+  USER_SPEAKING: "user_speaking",
+  USER_PAUSED: "user_paused",
+
+  CHAT_MODE: "chat_mode",
+  VOICE_MODE: "voice_mode",
 };
 
 const WS_RESPONSE_CONTROL_MESSAGES = {
-  SERVER_PROCESSING: 1,
-  SERVER_READY: 2,
-  SERVER_INTERRUPTED: 3,
-  SERVER_DONE: 4,
+  SERVER_PROCESSING: "server_processing",
+  SERVER_READY: "server_ready",
+  SERVER_INTERRUPTED: "server_interrupted",
+  SERVER_DONE: "server_done",
 };
 
 
@@ -39,24 +39,43 @@ const elevenlabs = new ElevenLabsClient({
 export function initializeWebSocket(server) {
   const wss = new WebSocketServer({ server });
 
-  wss.on("connection", (ws) => {
-    ws.id = Date.now() + "-" + Math.random().toString(36).slice(2, 11);
-    console.log(`Client connected: ${ws.id}`);
-
-    let recording = false;
+  wss.on("connection", (ws, req) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    console.log(url.pathname)
+    if (!url.pathname.startsWith("/chat/ws")) {
+      ws.close(1008, "Invalid WebSocket endpoint");
+      return;
+    }
+    // Extract conversationId from URL path /chat/ws/:conversationId
+    // e.g. /chat/ws/12345-abcdef
+    const pathParts = url.pathname.split("/");
+    const wsId = pathParts.length >= 3 ? pathParts[3] : null;
+    if (!wsId) {
+      ws.close(1008, "Missing conversationId in URL path");
+      return;
+    }
+    ws.id = wsId
+    let recording = true;
     let currentSessionChunks = []; // For accumulating audio during a speaking session
-    ws.chatHistory = []; // Initialize chat history for this WebSocket connection
-    let currentAbortController = null; // For cancelling ongoing operations
+    ws.chatHistory = [
+      {
+        role: "system",
+        content: "You are Mavis a helpful, friendly, and knowledgeable chatbot assistant. Provide clear, concise, and helpful responses to user questions and conversations. Be conversational and engaging while remaining professional, short and to the point.",
+      }
+    ];
+    let currentAbortController = null;
 
+    console.log(`Client connected for client ${ws.id} - Chat history initialized`);
     ws.on("message", async (message) => {
       try {
         // Parse JSON message
         const data = JSON.parse(message.toString());
-        if (data.t === WS_MESSAGE_TYPES.CONTROL) {
-          handleWebSocketControlMessage(data.v);
-        } else if (data.t === WS_MESSAGE_TYPES.AUDIO && recording) {
+        console.log("Received message:", data.type != "audio" ? data : "[Audio message]");
+        if (data.type === WS_MESSAGE_TYPES.CONTROL) {
+          handleWebSocketControlMessage(data.value);
+        } else if (data.type === WS_MESSAGE_TYPES.AUDIO && recording) {
           // Audio message - convert back to Buffer from JSON string
-          const audioBuffer = Buffer.from(JSON.parse(data.v));
+          const audioBuffer = Buffer.from(JSON.parse(data.value));
           currentSessionChunks.push(audioBuffer); // Also add to current session
         }
       } catch (error) {
@@ -65,12 +84,16 @@ export function initializeWebSocket(server) {
     });
 
     ws.on("close", () => {
+      recording = false;
+      ws.chatHistory = []; // Clear chat history at end of recording session
+      console.log(`Recording ended for client ${ws.id}`);
+
       // Cancel any ongoing operations when client disconnects
       if (currentAbortController) {
         currentAbortController.abort();
         console.log(`🚫 Cancelled ongoing operation for client ${ws.id} - Client disconnected`);
       }
-      console.log(`Client disconnected: ${ws.id} - Conversation ended (${ws.chatHistory ? ws.chatHistory.length - 1 : 0} messages exchanged)`);
+      console.log(`Client disconnected: ${ws.id} - Conversation ended (${ws.chatHistory.length} messages exchanged)`);
     });
 
     ws.on("error", (error) => {
@@ -78,38 +101,7 @@ export function initializeWebSocket(server) {
     });
 
     async function handleWebSocketControlMessage(msg) {
-      if (msg == WS_CONTROL_MESSAGES.RECORD_START) {
-        recording = true;
-        // Reset chat history when recording starts (new conversation session)
-        ws.chatHistory = [
-          {
-            role: "system",
-            content: "You are Mavis a helpful, friendly, and knowledgeable chatbot assistant. Provide clear, concise, and helpful responses to user questions and conversations. Be conversational and engaging while remaining professional, short and to the point.",
-          }
-        ];
-        console.log(`Recording started for client ${ws.id} - Chat history initialized`);
-      } else if (msg == WS_CONTROL_MESSAGES.RECORD_END) {
-        recording = false;
-        ws.chatHistory = []; // Clear chat history at end of recording session
-        console.log(`Recording ended for client ${ws.id}`);
-
-        // if (chunks.length > 0) {
-        //   const buffer = Buffer.concat(chunks);
-        //   // write to file
-        //   const filename = `${ws.id}_${Math.random()
-        //     .toString(36)
-        //     .slice(2, 11)}`;
-        //   try {
-        //     const wavBuffer = createWavFile(buffer, 16000, 1, 24);
-        //     const wavFilepath = `recordings/${filename}.wav`;
-        //     await writeFile(wavFilepath, wavBuffer);
-
-        //     console.log(`Saved WAV: ${wavFilepath}`);
-        //   } catch (err) {
-        //     console.error(`Error writing file for client ${ws.id}:`, err);
-        //   }
-        // }
-      } else if (msg == WS_CONTROL_MESSAGES.USER_SPEAKING) {
+      if (msg == WS_CONTROL_MESSAGES.USER_SPEAKING) {
         console.log(`User started speaking for client ${ws.id}`);
 
         // Cancel any ongoing transcription/GPT operations
@@ -119,8 +111,8 @@ export function initializeWebSocket(server) {
 
           // Send interruption message to client
           ws.send(JSON.stringify({
-            t: WS_MESSAGE_TYPES.CONTROL,
-            v: WS_RESPONSE_CONTROL_MESSAGES.SERVER_INTERRUPTED
+            type: WS_MESSAGE_TYPES.CONTROL,
+            value: WS_RESPONSE_CONTROL_MESSAGES.SERVER_INTERRUPTED
           }));
         }
 
@@ -142,8 +134,8 @@ export function initializeWebSocket(server) {
       try {
         // Send processing status to client
         ws.send(JSON.stringify({
-          t: WS_MESSAGE_TYPES.CONTROL,
-          v: WS_RESPONSE_CONTROL_MESSAGES.SERVER_PROCESSING
+          type: WS_MESSAGE_TYPES.CONTROL,
+          value: WS_RESPONSE_CONTROL_MESSAGES.SERVER_PROCESSING
         }));
 
         // Check if operation was cancelled before starting
@@ -201,8 +193,8 @@ export function initializeWebSocket(server) {
         // Send completion status to client if not cancelled
         if (!abortController.signal.aborted) {
           ws.send(JSON.stringify({
-            t: WS_MESSAGE_TYPES.CONTROL,
-            v: WS_RESPONSE_CONTROL_MESSAGES.SERVER_DONE
+            type: WS_MESSAGE_TYPES.CONTROL,
+            value: WS_RESPONSE_CONTROL_MESSAGES.SERVER_DONE
           }));
           currentAbortController = null; // Clear the abort controller
         }
@@ -234,8 +226,8 @@ export function initializeWebSocket(server) {
         });
 
         wsConnection.send(JSON.stringify({
-          t: WS_MESSAGE_TYPES.TEXT,
-          v: { user: userMessage }
+          type: WS_MESSAGE_TYPES.TEXT,
+          value: { user: userMessage }
         }));
 
         console.log(`💬 Chat history length: ${wsConnection.chatHistory.length} messages`);
@@ -262,8 +254,8 @@ export function initializeWebSocket(server) {
         });
 
         wsConnection.send(JSON.stringify({
-          t: WS_MESSAGE_TYPES.TEXT,
-          v: { assistant: response }
+          type: WS_MESSAGE_TYPES.TEXT,
+          value: { assistant: response }
         }));
 
         console.log(`🤖 GPT-4 Response for client ${clientId}: "${response}"`);
@@ -288,8 +280,8 @@ export function initializeWebSocket(server) {
         }
 
         wsConnection.send(JSON.stringify({
-          t: WS_MESSAGE_TYPES.CONTROL,
-          v: WS_RESPONSE_CONTROL_MESSAGES.SERVER_READY
+          type: WS_MESSAGE_TYPES.CONTROL,
+          value: WS_RESPONSE_CONTROL_MESSAGES.SERVER_READY
         }));
 
         console.log(`🔊 Converting text to speech for client ${clientId}...`);
@@ -297,7 +289,7 @@ export function initializeWebSocket(server) {
         const audioStream = await elevenlabs.textToSpeech.stream('JBFqnCBsd6RMkjVDRZzb', {
           modelId: 'eleven_multilingual_v2',
           text,
-          outputFormat: 'pcm_16000',
+          outputFormat: 'mp3_44100_128',
           voiceSettings: {
             stability: 0,
             similarityBoost: 1.0,
@@ -309,6 +301,9 @@ export function initializeWebSocket(server) {
         // Stream audio chunks to client as they become available
         let chunkCount = 0;
         for await (const chunk of audioStream) {
+          // log hex chunk
+          const hexChunk = chunk.toString('hex').slice(0, 20);
+          console.log({ hexChunk })
           // Check if operation was cancelled during streaming
           if (abortController.signal.aborted) {
             console.log(`🚫 Audio streaming cancelled for client ${clientId} after ${chunkCount} chunks`);
@@ -317,8 +312,8 @@ export function initializeWebSocket(server) {
 
           // Send audio chunk to client
           wsConnection.send(JSON.stringify({
-            t: WS_MESSAGE_TYPES.AUDIO_RESPONSE,
-            v: JSON.stringify(Array.from(chunk))
+            type: WS_MESSAGE_TYPES.AUDIO,
+            value: JSON.stringify(Array.from(chunk))
           }));
 
           chunkCount++;

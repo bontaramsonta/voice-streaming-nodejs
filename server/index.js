@@ -4,7 +4,7 @@ import app from "./router/index.js";
 import { initializeWebSocket } from "./websocket/index.js";
 
 const server = createServer(app);
-const PORT = 4000;
+const PORT = 8000;
 
 // Initialize WebSocket server
 initializeWebSocket(server);

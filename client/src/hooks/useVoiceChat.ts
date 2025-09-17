@@ -12,6 +12,7 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     disconnect,
     sendControlMessage,
     sendAudioData,
+    sendFlagMessage,
     isConnected,
     audioPlayback,
   } = useWebSocket();
@@ -108,7 +109,7 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
             sendControlMessage(CONTROL_MESSAGES.USER_SPEAKING);
             console.info("Recording - User speaking...");
             // Pause AI audio when user starts speaking
-            // audioPlayback.pauseAudio();
+            audioPlayback.pauseAudio();
             console.log("🎵 Paused AI audio - user speaking");
           }
         },
@@ -119,7 +120,7 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
             sendControlMessage(CONTROL_MESSAGES.USER_PAUSED);
             console.info("Recording - User paused...");
             // Resume AI audio when user stops speaking (if there was any paused)
-            // audioPlayback.resumeAudio();
+            audioPlayback.resumeAudio();
             console.log("🎵 Resumed AI audio - user paused");
           }
         },
@@ -144,12 +145,17 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
       // Clean up any existing resources
       await cleanupAudioResources();
 
-      // Connect to WebSocket first
-      // append conversionId as query param
-      const url = new URL(wsUrl);
-      url.searchParams.append("conversationId", conversationId);
-      console.log("Connecting to WebSocket URL:", url.toString());
-      connect(url.toString());
+      // Connect to WebSocket if not already connected
+      if (!isConnected) {
+        const randomConnectionId = Math.random().toString(36).slice(2, 10);
+        const url = new URL(`${wsUrl}/${conversationId}-${randomConnectionId}`);
+        console.log("Connecting to WebSocket URL:", url.toString());
+        await connect(url.toString());
+      }
+
+      // Send flag messages for voice on, text off
+      sendFlagMessage({ voice: "1" });
+      sendFlagMessage({ text: "0" });
 
       // Request microphone permissions
       const permissionStream = await requestPermissions();
@@ -193,30 +199,19 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
       });
 
       // Send start recording event to server
-      sendControlMessage(CONTROL_MESSAGES.RECORD_START);
       setRecording(true);
 
       // Set up message handling for audio data - IMPORTANT: Do this BEFORE connecting the audio graph
       audioWorkletNodeRef.current.port.onmessage = (event) => {
         if (event.data.type === "audioData" && isRecordingRef.current) {
-          // console.log(
-          //   "Audio data received from worklet:",
-          //   event.data.data.length,
-          //   "bytes"
-          // );
-
           // If VAD is available, only send audio when user is speaking
           if (vadRef.current) {
             if (isSpeakingRef.current) {
-              console.log("Sending audio data (user speaking)");
+              // console.log("Sending audio data (user speaking)");
               sendAudioData(event.data.data);
             } else {
-              console.log("Skipping audio data (user not speaking)");
+              // console.log("Skipping audio data (user not speaking)");
             }
-          } else {
-            // If no VAD, send all audio data (fallback behavior)
-            console.log("Sending audio data (no VAD)");
-            sendAudioData(event.data.data);
           }
         }
       };
@@ -233,7 +228,6 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
           console.log("VAD started successfully");
         } catch (vadError) {
           console.warn("Failed to start VAD:", vadError);
-          // Continue without VAD - audio will still be sent
         }
       }
 
@@ -255,6 +249,8 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     initializeVAD,
     sendControlMessage,
     setRecording,
+    isConnected,
+    conversationId,
   ]);
 
   const endChat = useCallback(async () => {
@@ -262,8 +258,8 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
       setRecording(false);
       setSpeaking(false);
 
-      // Send stop recording event
-      sendControlMessage(CONTROL_MESSAGES.RECORD_END);
+      // Send flag message for voice off before disconnecting
+      sendFlagMessage({ voice: "0" });
 
       // Clean up audio resources
       await cleanupAudioResources();
@@ -273,13 +269,18 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
 
       console.info("Call ended");
     }
+    if (audioPlayback.isPlaying()) {
+      audioPlayback.resetAudioStream();
+    }
   }, [
     state.isRecording,
     setRecording,
     setSpeaking,
-    sendControlMessage,
+    // sendControlMessage,
+    // sendControlFlagMessage,
     cleanupAudioResources,
     disconnect,
+    audioPlayback,
   ]);
 
   return {

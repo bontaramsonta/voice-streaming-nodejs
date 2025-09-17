@@ -1,7 +1,6 @@
 import { useRef, useCallback, useMemo } from "react";
 import { useChatContext } from "@/contexts/ChatContext";
 import {
-  CONTROL_MESSAGES,
   WebSocketMessage,
   WS_MESSAGE_TYPES,
   SERVER_CONTROL_MESSAGES,
@@ -16,62 +15,66 @@ export function useWebSocket() {
 
   const connect = useCallback(
     (url: string) => {
-      if (websocketRef.current?.readyState === WebSocket.OPEN) {
-        return; // Already connected
-      }
+      return new Promise<void>((resolve, reject) => {
+        if (websocketRef.current?.readyState === WebSocket.OPEN) {
+          resolve(); // Already connected
+          return;
+        }
 
-      websocketRef.current = new WebSocket(url);
-      // Using text/JSON messages instead of binary
+        websocketRef.current = new WebSocket(url);
+        // Using text/JSON messages instead of binary
 
-      websocketRef.current.onopen = () => {
-        intentionalDisconnectRef.current = false; // Reset flag on new connection
-        setConnected(true);
-        setStatus("Connected to server", "connected");
-      };
+        websocketRef.current.onopen = () => {
+          intentionalDisconnectRef.current = false; // Reset flag on new connection
+          setConnected(true);
+          setStatus("Connected to server", "connected");
+          resolve();
+        };
 
-      websocketRef.current.onmessage = (event) => {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data);
+        websocketRef.current.onmessage = (event) => {
+          try {
+            const message: WebSocketMessage = JSON.parse(event.data);
 
-          // Handle new message format
-          if (typeof message.t === "number") {
-            switch (message.t) {
+            // Handle new message format
+            switch (message.type) {
               case WS_MESSAGE_TYPES.CONTROL:
-                handleServerControlMessage(message.v);
+                handleServerControlMessage(message.value);
                 break;
-              case WS_MESSAGE_TYPES.AUDIO_RESPONSE:
-                handleAudioResponse(message.v);
+              case WS_MESSAGE_TYPES.AUDIO:
+                handleAudioResponse(message.value);
                 break;
               case WS_MESSAGE_TYPES.TEXT:
-                console.log("Text message received:", message.v);
+                console.log("Text message received:", message.value);
                 break;
               default:
-                console.log("Unknown message type:", message.t);
+                console.log("Unknown message type:", message.type);
             }
+          } catch (error) {
+            console.error("Error parsing WebSocket message:", error);
           }
-        } catch (error) {
-          console.error("Error parsing WebSocket message:", error);
-        }
-      };
+        };
 
-      websocketRef.current.onclose = () => {
-        setConnected(false);
-        // Only show error message if this wasn't an intentional disconnect
-        if (!intentionalDisconnectRef.current) {
-          setStatus("Disconnected from server", "error");
-        }
-      };
+        websocketRef.current.onclose = () => {
+          setConnected(false);
+          // Only show error message if this wasn't an intentional disconnect
+          if (!intentionalDisconnectRef.current) {
+            setStatus("Disconnected from server", "error");
+            reject(new Error("WebSocket unintentionally disconnected"));
+          }
+        };
 
-      websocketRef.current.onerror = (error) => {
-        setStatus("WebSocket error", "error");
-        console.error("WebSocket error:", error);
-      };
+        websocketRef.current.onerror = (error) => {
+          setStatus("WebSocket error", "error");
+          console.error("WebSocket error:", error);
+          reject(error instanceof Event ? new Error("WebSocket error") : error);
+        };
+      });
     },
     [setConnected, setStatus, audioPlayback]
   );
 
   const handleServerControlMessage = useCallback(
-    (controlValue: number) => {
+    (controlValue: string) => {
       switch (controlValue) {
         case SERVER_CONTROL_MESSAGES.SERVER_PROCESSING:
           setStatus("AI is processing...", "recording");
@@ -90,7 +93,10 @@ export function useWebSocket() {
         case SERVER_CONTROL_MESSAGES.SERVER_DONE:
           setStatus("Processing complete", "connected");
           console.log("🤖 Server processing done");
-          audioPlayback.playCompleteAudio();
+          break;
+        case "stream_complete":
+          console.log("🏁 Audio streaming complete");
+          audioPlayback.markStreamComplete();
           break;
         default:
           console.log("Unknown server control message:", controlValue);
@@ -121,23 +127,42 @@ export function useWebSocket() {
     }
   }, []);
 
-  const sendControlMessage = useCallback((command: number) => {
+  const sendControlMessage = useCallback((command: string) => {
     if (websocketRef.current?.readyState === WebSocket.OPEN) {
-      const message = {
-        t: 1, // Control message type
-        v: command,
-      };
-      websocketRef.current.send(JSON.stringify(message));
+      websocketRef.current.send(
+        JSON.stringify({
+          type: WS_MESSAGE_TYPES.CONTROL,
+          value: command,
+        })
+      );
+    }
+  }, []);
+
+  // Send a flag message, retrying up to 10 times if not connected
+  const sendFlagMessage = useCallback((flagObj: object) => {
+    if (websocketRef.current?.readyState === WebSocket.OPEN) {
+      websocketRef.current.send(
+        JSON.stringify({
+          type: WS_MESSAGE_TYPES.FLAG,
+          value: flagObj,
+        })
+      );
+    } else {
+      console.error(
+        "WebSocket not connected, failed to send flag message:",
+        flagObj
+      );
     }
   }, []);
 
   const sendAudioData = useCallback((data: Uint8Array) => {
     if (websocketRef.current?.readyState === WebSocket.OPEN) {
-      const audioMessage = {
-        t: 2, // Audio message type
-        v: JSON.stringify(Array.from(data)),
-      };
-      websocketRef.current.send(JSON.stringify(audioMessage));
+      websocketRef.current.send(
+        JSON.stringify({
+          type: WS_MESSAGE_TYPES.AUDIO,
+          value: JSON.stringify(Array.from(data)),
+        })
+      );
     }
   }, []);
 
@@ -151,6 +176,7 @@ export function useWebSocket() {
     disconnect,
     sendControlMessage,
     sendAudioData,
+    sendFlagMessage,
     isConnected,
     audioPlayback,
   };

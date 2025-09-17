@@ -5,8 +5,8 @@ export interface AudioDevice {
 }
 
 export interface WebSocketMessage {
-  t: number; // Message type
-  v: any; // Message value/data
+  type: string; // Message type
+  value: any; // Message value/data
 }
 
 export interface LegacyWebSocketMessage {
@@ -26,24 +26,27 @@ export interface ChatState {
 }
 
 export const WS_MESSAGE_TYPES = {
-  CONTROL: 1,
-  AUDIO: 2,
-  TEXT: 3,
-  AUDIO_RESPONSE: 4,
+  CONTROL: "control",
+  AUDIO: "audio",
+  TEXT: "text",
+  FLAG: "flag",
 } as const;
 
+export const WS_SERVER_FLAGS = {
+  VOICE: "voice",
+  CHAT: "text",
+};
+
 export const CONTROL_MESSAGES = {
-  RECORD_START: 1,
-  RECORD_END: 2,
-  USER_SPEAKING: 3,
-  USER_PAUSED: 4,
+  USER_SPEAKING: "user_speaking",
+  USER_PAUSED: "user_paused",
 } as const;
 
 export const SERVER_CONTROL_MESSAGES = {
-  SERVER_PROCESSING: 1,
-  SERVER_READY: 2,
-  SERVER_INTERRUPTED: 3,
-  SERVER_DONE: 4,
+  SERVER_PROCESSING: "server_processing",
+  SERVER_READY: "server_ready",
+  SERVER_INTERRUPTED: "server_interrupted",
+  SERVER_DONE: "server_done",
 } as const;
 
 export type ControlMessage =

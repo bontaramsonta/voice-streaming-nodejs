@@ -18,7 +18,7 @@ function App() {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
         {conversationId ? (
           <ChatWidget
-            wsUrl="ws://localhost:4000"
+            wsUrl="ws://localhost:8000/chat/ws"
             conversationId={conversationId}
           />
         ) : (
