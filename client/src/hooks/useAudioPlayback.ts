@@ -7,7 +7,6 @@ export function useAudioPlayback() {
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const currentBlobUrlRef = useRef<string | null>(null);
   const debugIdRef = useRef(0);
-  const isStreamingCompleteRef = useRef(false);
 
   // Set the audio element reference (called from ChatWidget)
   const setAudioElement = useCallback(
@@ -55,8 +54,6 @@ export function useAudioPlayback() {
                 playAudio();
               }
             }, 100);
-          } else if (isStreamingCompleteRef.current) {
-            console.log("✅ All audio playback completed - stream finished");
           }
         };
 
@@ -204,12 +201,6 @@ export function useAudioPlayback() {
     [playAudio]
   );
 
-  // Mark streaming as complete
-  const markStreamComplete = useCallback(() => {
-    console.log("🏁 Audio streaming marked as complete");
-    isStreamingCompleteRef.current = true;
-  }, []);
-
   // Reset audio stream for new response
   const resetAudioStream = useCallback(() => {
     console.log("🔄 resetAudioStream called");
@@ -230,7 +221,6 @@ export function useAudioPlayback() {
     audioChunksRef.current = [];
     playedChunksRef.current = 0;
     isPlayingRef.current = false;
-    isStreamingCompleteRef.current = false;
 
     console.log(`✅ Reset complete. Cleared ${oldChunkCount} chunks`);
   }, []);
@@ -266,7 +256,6 @@ export function useAudioPlayback() {
   return {
     setAudioElement,
     addAudioChunk,
-    markStreamComplete,
     resetAudioStream,
     pauseAudio,
     resumeAudio,

@@ -4,7 +4,6 @@ import {
   PhoneOff,
   MessageCircle,
   MessageCircleOff,
-  Volume2,
   Loader2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,7 @@ import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { cn } from "@/lib/utils";
 import { useState, useCallback, useRef, useEffect } from "react";
 import TextChatPanel from "./TextChatPanel";
+import { useTextChat } from "@/hooks/useTextChat";
 
 interface ChatWidgetProps {
   wsUrl: string;
@@ -20,8 +20,12 @@ interface ChatWidgetProps {
 }
 
 export default function ChatWidget({ wsUrl, conversationId }: ChatWidgetProps) {
-  const { state } = useChatContext();
-  const { startChat, endChat, audioPlayback } = useVoiceChat(
+  const { state, modeRef, disconnectWebSocket } = useChatContext();
+  const { startVoiceChat, endVoiceChat, audioPlayback } = useVoiceChat(
+    wsUrl,
+    conversationId
+  );
+  const { startTextChat, endTextChat, sendTextData } = useTextChat(
     wsUrl,
     conversationId
   );
@@ -35,21 +39,63 @@ export default function ChatWidget({ wsUrl, conversationId }: ChatWidgetProps) {
     }
   }, [audioPlayback]);
 
+  const switchMode = useCallback(
+    async (to: "voice" | "text" | null) => {
+      if (to === "text") {
+        if (modeRef.current === "voice") {
+          await endVoiceChat();
+        }
+        await startTextChat();
+        modeRef.current = "text";
+        setIsChatOpen(true);
+      } else if (to === "voice") {
+        if (modeRef.current === "text") {
+          await endTextChat();
+        }
+        await startVoiceChat();
+        modeRef.current = "voice";
+        setIsChatOpen(false);
+      } else {
+        // Switching to null - end any active mode
+        if (modeRef.current === "voice") {
+          await endVoiceChat();
+        } else if (modeRef.current === "text") {
+          await endTextChat();
+        }
+        disconnectWebSocket();
+        setIsChatOpen(false);
+        modeRef.current = null;
+      }
+    },
+    [
+      modeRef,
+      endVoiceChat,
+      startVoiceChat,
+      endTextChat,
+      startTextChat,
+      disconnectWebSocket,
+      setIsChatOpen,
+    ]
+  );
   const handleMicClick = useCallback(async () => {
     if (state.isRecording) {
-      await endChat();
+      switchMode(null);
     } else {
-      await startChat();
+      switchMode("voice");
     }
-  }, [state.isRecording, endChat, startChat]);
+  }, [state.isRecording, switchMode]);
+
+  const handleChatClick = useCallback(() => {
+    if (isChatOpen) {
+      switchMode(null);
+    } else {
+      switchMode("text");
+    }
+  }, [isChatOpen, switchMode]);
 
   const handleSettingsClick = useCallback(() => {
     console.log("Settings clicked - no functionality yet");
   }, []);
-
-  const handleChatClick = useCallback(() => {
-    setIsChatOpen(!isChatOpen);
-  }, [isChatOpen]);
 
   return (
     <div className="relative">
@@ -149,7 +195,7 @@ export default function ChatWidget({ wsUrl, conversationId }: ChatWidgetProps) {
       </div>
 
       {/* Text Chat Panel */}
-      <TextChatPanel isOpen={isChatOpen} />
+      <TextChatPanel isOpen={isChatOpen} sendMessage={sendTextData} />
     </div>
   );
 }

@@ -11,9 +11,13 @@ interface ChatMessage {
 
 interface TextChatPanelProps {
   isOpen: boolean;
+  sendMessage?: (message: string) => void;
 }
 
-export default function TextChatPanel({ isOpen }: TextChatPanelProps) {
+export default function TextChatPanel({
+  isOpen,
+  sendMessage,
+}: TextChatPanelProps) {
   const [inputMessage, setInputMessage] = useState("");
 
   // Demo messages - memoized to prevent recreation
@@ -36,11 +40,10 @@ export default function TextChatPanel({ isOpen }: TextChatPanelProps) {
 
   const handleSendMessage = useCallback(() => {
     if (inputMessage.trim()) {
-      // In a real implementation, you would add the message to the messages array
-      console.log("Sending message:", inputMessage);
+      sendMessage?.(inputMessage);
       setInputMessage("");
     }
-  }, [inputMessage]);
+  }, [inputMessage, sendMessage]);
 
   const handleKeyPress = useCallback(
     (e: React.KeyboardEvent) => {

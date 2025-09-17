@@ -18,6 +18,7 @@ interface ChatContextType {
   setStatus: (status: string, type?: ChatState["statusType"]) => void;
   setAudioDevices: (devices: AudioDevice[]) => void;
   setSelectedDevice: (deviceId: string) => void;
+  modeRef: React.RefObject<"voice" | "text" | null>;
   // WebSocket connection and helpers
   websocketRef: React.RefObject<WebSocket | null>;
   connectWebSocket: (url: string) => Promise<void>;
@@ -77,6 +78,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(chatReducer, initialState);
+
+  const modeRef = useRef<"voice" | "text" | null>(null);
 
   // WebSocket connection ref and helpers
   const websocketRef = useRef<WebSocket | null>(null);
@@ -172,6 +175,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo(
     () => ({
       state,
+      modeRef,
       setConnected,
       setIsVoiceLoading,
       setRecording,
@@ -186,6 +190,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
+      modeRef,
       setConnected,
       setIsVoiceLoading,
       setRecording,

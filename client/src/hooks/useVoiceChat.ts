@@ -1,22 +1,154 @@
 import { useRef, useCallback, useEffect } from "react";
 import { MicVAD } from "@ricky0123/vad-web";
 import { useChatContext } from "@/contexts/ChatContext";
-import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAudioDevices } from "@/hooks/useAudioDevices";
-import { CONTROL_MESSAGES } from "@/types/chat";
+import {
+  CONTROL_MESSAGES,
+  SERVER_CONTROL_MESSAGES,
+  WebSocketMessage,
+  WS_MESSAGE_TYPES,
+} from "@/types/chat";
+import { useAudioPlayback } from "@/hooks/useAudioPlayback";
 
 export function useVoiceChat(wsUrl: string, conversationId: string) {
-  const { state, setRecording, setSpeaking, setIsVoiceLoading } =
-    useChatContext();
   const {
-    connect,
-    disconnect,
-    sendControlMessage,
-    sendAudioData,
-    sendFlagMessage,
-    isConnected,
-    audioPlayback,
-  } = useWebSocket();
+    state,
+    modeRef,
+    setRecording,
+    setSpeaking,
+    setIsVoiceLoading,
+    websocketRef,
+    connectWebSocket: connect,
+    sendWebSocketMessage,
+    setStatus,
+  } = useChatContext();
+  const audioPlayback = useAudioPlayback();
+
+  // Set up message handling when WebSocket is available
+  useEffect(() => {
+    function handleWSMessagesForVoice(event: MessageEvent) {
+      try {
+        const message: WebSocketMessage = JSON.parse(event.data);
+
+        // Handle new message format
+        switch (message.type) {
+          case WS_MESSAGE_TYPES.CONTROL:
+            handleServerControlMessage(message.value);
+            break;
+          case WS_MESSAGE_TYPES.AUDIO:
+            handleAudioResponse(message.value);
+            break;
+          case WS_MESSAGE_TYPES.TEXT:
+            console.log("Text message received:", message.value);
+            break;
+          default:
+            console.log("Unknown message type:", message.type);
+        }
+      } catch (error) {
+        console.error("Error parsing WebSocket message:", error);
+      }
+    }
+
+    function cleanup() {
+      if (websocketRef.current) {
+        console.log("Cleaning up WebSocket message handler for voice chat");
+        websocketRef.current.removeEventListener(
+          "message",
+          handleWSMessagesForVoice
+        );
+      }
+    }
+
+    if (websocketRef.current && modeRef.current === "voice") {
+      console.log("Setting up WebSocket message handler for voice chat");
+      websocketRef.current.addEventListener(
+        "message",
+        handleWSMessagesForVoice
+      );
+
+      return cleanup;
+    }
+  }, [websocketRef.current, modeRef.current]);
+
+  const handleServerControlMessage = useCallback(
+    (controlValue: string) => {
+      switch (controlValue) {
+        case SERVER_CONTROL_MESSAGES.SERVER_PROCESSING:
+          setStatus("AI is processing...", "recording");
+          console.log("🤖 Server processing started");
+          break;
+        case SERVER_CONTROL_MESSAGES.SERVER_READY:
+          setStatus("Ready for input", "connected");
+          console.log("🤖 Server ready - resetting audio stream");
+          audioPlayback.resetAudioStream();
+          break;
+        case SERVER_CONTROL_MESSAGES.SERVER_INTERRUPTED:
+          setStatus("Processing interrupted", "connected");
+          console.log("🤖 Server processing interrupted");
+          audioPlayback.resetAudioStream();
+          break;
+        case SERVER_CONTROL_MESSAGES.SERVER_DONE:
+          setStatus("Processing complete", "connected");
+          console.log("🤖 Server processing done");
+          break;
+        default:
+          console.log("Unknown server control message:", controlValue);
+      }
+    },
+    [setStatus, audioPlayback]
+  );
+
+  const handleAudioResponse = useCallback(
+    (audioData: string) => {
+      try {
+        // Convert JSON string back to Uint8Array
+        const audioArray = JSON.parse(audioData);
+        const audioChunk = new Uint8Array(audioArray);
+        audioPlayback.addAudioChunk(audioChunk);
+      } catch (error) {
+        console.error("Error processing audio response:", error);
+      }
+    },
+    [audioPlayback]
+  );
+
+  const sendControlMessage = useCallback(
+    (command: string) => {
+      sendWebSocketMessage({
+        type: WS_MESSAGE_TYPES.CONTROL,
+        value: command,
+      });
+    },
+    [sendWebSocketMessage]
+  );
+
+  const sendFlagMessage = useCallback(
+    (flagObj: object) => {
+      if (websocketRef.current?.readyState === WebSocket.OPEN) {
+        sendWebSocketMessage({
+          type: WS_MESSAGE_TYPES.FLAG,
+          value: flagObj,
+        });
+      } else {
+        console.error(
+          "WebSocket not connected, failed to send flag message:",
+          flagObj
+        );
+      }
+    },
+    [sendWebSocketMessage, websocketRef]
+  );
+
+  const sendAudioData = useCallback(
+    (data: Uint8Array) => {
+      sendWebSocketMessage({
+        type: WS_MESSAGE_TYPES.AUDIO,
+        value: JSON.stringify(Array.from(data)),
+      });
+    },
+    [sendWebSocketMessage]
+  );
+
   const { requestPermissions, getMediaStream } = useAudioDevices();
 
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -120,13 +252,13 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
             setSpeaking(false);
             sendControlMessage(CONTROL_MESSAGES.USER_PAUSED);
             console.info("Recording - User paused...");
-            // Resume AI audio when user stops speaking (if there was any paused)
-            audioPlayback.resumeAudio();
             console.log("🎵 Resumed AI audio - user paused");
           }
         },
         onVADMisfire: () => {
           console.log("VAD misfire");
+          // Resume AI audio when user by mistake spoke
+          audioPlayback.resumeAudio();
         },
         baseAssetPath: "/",
         onnxWASMBasePath: "/",
@@ -141,14 +273,14 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     }
   }, [setSpeaking, sendControlMessage, audioPlayback]);
 
-  const startChat = useCallback(async () => {
+  const startVoiceChat = useCallback(async () => {
     try {
       setIsVoiceLoading(true);
       // Clean up any existing resources
       await cleanupAudioResources();
 
       // Connect to WebSocket if not already connected
-      if (!isConnected) {
+      if (!state.isConnected) {
         const randomConnectionId = Math.random().toString(36).slice(2, 10);
         const url = new URL(`${wsUrl}/${conversationId}-${randomConnectionId}`);
         console.log("Connecting to WebSocket URL:", url.toString());
@@ -157,7 +289,6 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
 
       // Send flag messages for voice on, text off
       sendFlagMessage({ voice: "1" });
-      sendFlagMessage({ text: "0" });
 
       // Request microphone permissions
       const permissionStream = await requestPermissions();
@@ -250,11 +381,12 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     initializeVAD,
     sendControlMessage,
     setRecording,
-    isConnected,
+    state.isConnected,
     conversationId,
   ]);
 
-  const endChat = useCallback(async () => {
+  const endVoiceChat = useCallback(async () => {
+    console.log("Ending voice chat...");
     if (state.isRecording) {
       setRecording(false);
       setSpeaking(false);
@@ -264,9 +396,6 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
 
       // Clean up audio resources
       await cleanupAudioResources();
-
-      // Disconnect WebSocket
-      disconnect();
 
       console.info("Call ended");
     }
@@ -278,14 +407,12 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     setRecording,
     setSpeaking,
     cleanupAudioResources,
-    disconnect,
     audioPlayback,
   ]);
 
   return {
-    startChat,
-    endChat,
-    isConnected,
+    startVoiceChat,
+    endVoiceChat,
     audioPlayback,
   };
 }
