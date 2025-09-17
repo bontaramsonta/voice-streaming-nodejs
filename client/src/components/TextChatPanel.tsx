@@ -7,7 +7,6 @@ interface ChatMessage {
   id: string;
   content: string;
   isUser: boolean;
-  timestamp: Date;
 }
 
 interface TextChatPanelProps {
@@ -24,27 +23,12 @@ export default function TextChatPanel({ isOpen }: TextChatPanelProps) {
         id: "1",
         content: "Hello! How can I help you today?",
         isUser: false,
-        timestamp: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
       },
       {
         id: "2",
         content:
           "Hi! I'm looking for information about your voice chat feature.",
         isUser: true,
-        timestamp: new Date(Date.now() - 4 * 60 * 1000), // 4 minutes ago
-      },
-      {
-        id: "3",
-        content:
-          "Great! Our voice chat feature allows real-time audio communication with AI. You can click the microphone button to start a voice conversation. Would you like to know more about any specific aspect?",
-        isUser: false,
-        timestamp: new Date(Date.now() - 3 * 60 * 1000), // 3 minutes ago
-      },
-      {
-        id: "4",
-        content: "That sounds amazing! How does the voice detection work?",
-        isUser: true,
-        timestamp: new Date(Date.now() - 2 * 60 * 1000), // 2 minutes ago
       },
     ],
     []
@@ -81,11 +65,6 @@ export default function TextChatPanel({ isOpen }: TextChatPanelProps) {
           : "opacity-0 -translate-y-4 max-h-0 pointer-events-none"
       )}
     >
-      {/* Chat Header */}
-      {/* <div className="p-3 border-b border-gray-100">
-        <h4 className="font-semibold text-gray-900">Chat</h4>
-      </div> */}
-
       {/* Messages */}
       <div className="h-64 overflow-y-auto p-3 space-y-3">
         {messages.map((message) => (
@@ -105,14 +84,6 @@ export default function TextChatPanel({ isOpen }: TextChatPanelProps) {
               )}
             >
               <p>{message.content}</p>
-              <p
-                className={cn(
-                  "text-xs mt-1",
-                  message.isUser ? "text-blue-100" : "text-gray-500"
-                )}
-              >
-                {formatTime(message.timestamp)}
-              </p>
             </div>
           </div>
         ))}

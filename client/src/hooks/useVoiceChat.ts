@@ -6,7 +6,8 @@ import { useAudioDevices } from "@/hooks/useAudioDevices";
 import { CONTROL_MESSAGES } from "@/types/chat";
 
 export function useVoiceChat(wsUrl: string, conversationId: string) {
-  const { state, setRecording, setSpeaking } = useChatContext();
+  const { state, setRecording, setSpeaking, setIsVoiceLoading } =
+    useChatContext();
   const {
     connect,
     disconnect,
@@ -142,6 +143,7 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
 
   const startChat = useCallback(async () => {
     try {
+      setIsVoiceLoading(true);
       // Clean up any existing resources
       await cleanupAudioResources();
 
@@ -198,9 +200,6 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
         sampleRate: audioContextRef.current!.sampleRate,
       });
 
-      // Send start recording event to server
-      setRecording(true);
-
       // Set up message handling for audio data - IMPORTANT: Do this BEFORE connecting the audio graph
       audioWorkletNodeRef.current.port.onmessage = (event) => {
         if (event.data.type === "audioData" && isRecordingRef.current) {
@@ -233,6 +232,8 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
 
       console.info("Recording with VAD - speak to begin...");
       console.log("Voice chat started successfully");
+      setIsVoiceLoading(false);
+      setRecording(true);
     } catch (error) {
       console.error("Error starting chat:", error);
       console.info("Error starting recording:", (error as Error).message);
@@ -276,8 +277,6 @@ export function useVoiceChat(wsUrl: string, conversationId: string) {
     state.isRecording,
     setRecording,
     setSpeaking,
-    // sendControlMessage,
-    // sendControlFlagMessage,
     cleanupAudioResources,
     disconnect,
     audioPlayback,

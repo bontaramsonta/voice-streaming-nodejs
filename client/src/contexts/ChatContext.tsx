@@ -5,23 +5,31 @@ import React, {
   ReactNode,
   useMemo,
   useCallback,
+  useRef,
 } from "react";
 import { ChatState, AudioDevice } from "@/types/chat";
 
 interface ChatContextType {
   state: ChatState;
   setConnected: (connected: boolean) => void;
+  setIsVoiceLoading: (loading: boolean) => void;
   setRecording: (recording: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
   setStatus: (status: string, type?: ChatState["statusType"]) => void;
   setAudioDevices: (devices: AudioDevice[]) => void;
   setSelectedDevice: (deviceId: string) => void;
+  // WebSocket connection and helpers
+  websocketRef: React.RefObject<WebSocket | null>;
+  connectWebSocket: (url: string) => Promise<void>;
+  disconnectWebSocket: () => void;
+  sendWebSocketMessage: (msg: object) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 type ChatAction =
   | { type: "SET_CONNECTED"; payload: boolean }
+  | { type: "SET_IS_VOICE_LOADING"; payload: boolean }
   | { type: "SET_RECORDING"; payload: boolean }
   | { type: "SET_SPEAKING"; payload: boolean }
   | {
@@ -33,6 +41,7 @@ type ChatAction =
 
 const initialState: ChatState = {
   isConnected: false,
+  isVoiceLoading: false,
   isRecording: false,
   isSpeaking: false,
   status: "Disconnected",
@@ -45,6 +54,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "SET_CONNECTED":
       return { ...state, isConnected: action.payload };
+    case "SET_IS_VOICE_LOADING":
+      return { ...state, isVoiceLoading: action.payload };
     case "SET_RECORDING":
       return { ...state, isRecording: action.payload };
     case "SET_SPEAKING":
@@ -67,9 +78,19 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(chatReducer, initialState);
 
+  // WebSocket connection ref and helpers
+  const websocketRef = useRef<WebSocket | null>(null);
+  const intentionalDisconnectRef = useRef(false);
+
   const setConnected = useCallback(
     (connected: boolean) =>
       dispatch({ type: "SET_CONNECTED", payload: connected }),
+    []
+  );
+
+  const setIsVoiceLoading = useCallback(
+    (loading: boolean) =>
+      dispatch({ type: "SET_IS_VOICE_LOADING", payload: loading }),
     []
   );
 
@@ -103,24 +124,78 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  // WebSocket connect/disconnect/send helpers
+  const connectWebSocket = useCallback(
+    (url: string) => {
+      return new Promise<void>((resolve, reject) => {
+        if (websocketRef.current?.readyState === WebSocket.OPEN) {
+          resolve();
+          return;
+        }
+        websocketRef.current = new WebSocket(url);
+        websocketRef.current.onopen = () => {
+          intentionalDisconnectRef.current = false;
+          setConnected(true);
+          setStatus("Connected to server", "connected");
+          resolve();
+        };
+        websocketRef.current.onclose = () => {
+          setConnected(false);
+          if (!intentionalDisconnectRef.current) {
+            setStatus("Disconnected from server", "error");
+            reject(new Error("WebSocket unintentionally disconnected"));
+          }
+        };
+        websocketRef.current.onerror = (error) => {
+          setStatus("WebSocket error", "error");
+          reject(error instanceof Event ? new Error("WebSocket error") : error);
+        };
+      });
+    },
+    [setConnected, setStatus]
+  );
+
+  const disconnectWebSocket = useCallback(() => {
+    if (websocketRef.current) {
+      intentionalDisconnectRef.current = true;
+      websocketRef.current.close();
+      websocketRef.current = null;
+    }
+  }, []);
+
+  const sendWebSocketMessage = useCallback((msg: object) => {
+    if (websocketRef.current?.readyState === WebSocket.OPEN) {
+      websocketRef.current.send(JSON.stringify(msg));
+    }
+  }, []);
+
   const contextValue = useMemo(
     () => ({
       state,
       setConnected,
+      setIsVoiceLoading,
       setRecording,
       setSpeaking,
       setStatus,
       setAudioDevices,
       setSelectedDevice,
+      websocketRef,
+      connectWebSocket,
+      disconnectWebSocket,
+      sendWebSocketMessage,
     }),
     [
       state,
       setConnected,
+      setIsVoiceLoading,
       setRecording,
       setSpeaking,
       setStatus,
       setAudioDevices,
       setSelectedDevice,
+      connectWebSocket,
+      disconnectWebSocket,
+      sendWebSocketMessage,
     ]
   );
 

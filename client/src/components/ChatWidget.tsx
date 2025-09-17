@@ -5,6 +5,7 @@ import {
   MessageCircle,
   MessageCircleOff,
   Volume2,
+  Loader2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChatContext } from "@/contexts/ChatContext";
@@ -73,13 +74,15 @@ export default function ChatWidget({ wsUrl, conversationId }: ChatWidgetProps) {
               disabled={state.isConnected === false && state.isRecording}
               size="lg"
               className={cn(
-                "w-12 h-12 rounded-full p-0",
+                "w-12 h-12 rounded-full p-0 flex items-center justify-center",
                 state.isRecording
                   ? "bg-red-500 hover:bg-red-600 text-white"
                   : "bg-blue-500 hover:bg-blue-600 text-white"
               )}
             >
-              {state.isRecording ? (
+              {state.isVoiceLoading ? (
+                <Loader2Icon className="animate-spin" />
+              ) : state.isRecording ? (
                 <PhoneOff className="w-6 h-6" />
               ) : (
                 <Mic className="w-6 h-6" />

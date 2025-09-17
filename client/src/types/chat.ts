@@ -17,6 +17,7 @@ export interface LegacyWebSocketMessage {
 
 export interface ChatState {
   isConnected: boolean;
+  isVoiceLoading: boolean;
   isRecording: boolean;
   isSpeaking: boolean;
   status: string;

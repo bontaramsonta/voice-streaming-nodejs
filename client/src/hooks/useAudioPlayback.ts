@@ -12,10 +12,6 @@ export function useAudioPlayback() {
   // Set the audio element reference (called from ChatWidget)
   const setAudioElement = useCallback(
     (audioElement: HTMLAudioElement | null) => {
-      console.log(
-        "🔧 setAudioElement called with:",
-        audioElement ? "valid element" : "null"
-      );
       audioElementRef.current = audioElement;
 
       if (audioElement) {
